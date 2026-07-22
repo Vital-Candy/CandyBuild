@@ -1,0 +1,61 @@
+#!/data/data/com.termux/files/usr/bin/bash
+set -euo pipefail
+
+SOURCE="$(readlink -f "${BASH_SOURCE[0]}")"
+ROOT="$(cd "$(dirname "$SOURCE")/.." && pwd)"
+# shellcheck source=/dev/null
+source "$ROOT/lib/common.sh"
+
+VERSION="0.3.0"
+
+show_help() {
+    echo -e "${BLUE}=========================================${NC}"
+    echo -e "${BLUE}          CandyBuild v$VERSION${NC}"
+    echo -e "${BLUE}=========================================${NC}"
+    echo
+    echo -e "${YELLOW}Usage:${NC} candybuild <command> [args]"
+    echo
+    echo -e "${YELLOW}Commands:${NC}"
+    printf "  %-16s %s\n" "new [name]"      "Create a new project"
+    printf "  %-16s %s\n" "setup <path>"    "(Re)generate project folders"
+    printf "  %-16s %s\n" "build [path]"    "Build APK (add --release for a release build)"
+    printf "  %-16s %s\n" "clean [path]"    "Remove build/ and out/ artifacts"
+    printf "  %-16s %s\n" "doctor"          "Check the development environment"
+    printf "  %-16s %s\n" "version"         "Show CandyBuild version"
+    printf "  %-16s %s\n" "help"            "Show this help"
+    echo
+}
+
+cmd="${1:-help}"
+[ $# -gt 0 ] && shift
+
+case "$cmd" in
+    new)
+        bash "$ROOT/commands/new.sh" "$@"
+        ;;
+    setup)
+        [ -z "${1:-}" ] && die "Usage: candybuild setup <project_path>"
+        bash "$ROOT/commands/setup.sh" "$@"
+        ;;
+    build)
+        bash "$ROOT/commands/build.sh" "$@"
+        ;;
+    clean)
+        bash "$ROOT/commands/clean.sh" "$@"
+        ;;
+    doctor)
+        bash "$ROOT/commands/doctor.sh"
+        ;;
+    version|-v|--version)
+        echo "CandyBuild v$VERSION"
+        ;;
+    help|-h|--help)
+        show_help
+        ;;
+    *)
+        log_err "Unknown command: $cmd"
+        echo
+        show_help
+        exit 1
+        ;;
+esac
