@@ -34,7 +34,9 @@ check curl
 check clang++
 check candybuild
 
-if [ -d "${PREFIX:-/nonexistent}/opt/ndk-sysroot" ] || [ -n "${ANDROID_NDK_HOME:-}" ]; then
+source "$ROOT/lib/ndk.sh"
+
+if ndk_sysroot_installed || [ -n "${ANDROID_NDK_HOME:-}" ]; then
     log_ok "Native (C++) toolchain ready"
 else
     log_warn "No ndk-sysroot and no ANDROID_NDK_HOME — C++ projects won't build. See docs/NATIVE.md"
@@ -79,7 +81,19 @@ fi
 
 echo -n "Kotlin: "
 if command -v kotlinc >/dev/null 2>&1; then
-    kotlinc -version 2>&1 | head -n1
+    # On Termux (arm64), kotlinc prints a harmless jansi/native-library
+    # warning to stderr before its real version line — grabbing the
+    # first line of combined output shows that warning instead of the
+    # version. Filter for the actual version line specifically.
+    KOTLIN_RAW="$(kotlinc -version 2>&1)"
+    KOTLIN_VERSION_LINE="$(echo "$KOTLIN_RAW" | grep -iE 'kotlinc-jvm|kotlin version' | head -n1)"
+    if [ -n "$KOTLIN_VERSION_LINE" ]; then
+        echo "$KOTLIN_VERSION_LINE"
+    else
+        # Unexpected output shape — show the raw first line rather than
+        # nothing, but flag it so it's clear this isn't the filtered result.
+        echo "(unrecognized output) $(echo "$KOTLIN_RAW" | head -n1)"
+    fi
 else
     echo "not installed"
 fi

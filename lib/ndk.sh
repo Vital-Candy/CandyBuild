@@ -1,19 +1,24 @@
 #!/data/data/com.termux/files/usr/bin/bash
-# Locates a way to compile C++ that actually targets Android (Bionic),
-# not Termux's own userland. This distinction matters: Termux's `clang`
-# by default links against Termux's own libc in $PREFIX/lib, and a .so
-# built that way will NOT load inside a normal Android app process
-# (System.loadLibrary will fail with a linker error) — it only runs
-# inside Termux itself. A real Android .so needs either:
-#   a) the Termux `ndk-sysroot` package, used with clang's -target flag, or
-#   b) a full Android NDK (ANDROID_NDK_HOME) with its own clang wrapper
-# We look for whichever is available and prefer (b) if both are set,
-# since a full NDK is more likely to match app-facing API levels exactly.
+# Locates a way to compile C++ that actually targets Android (Bionic)
+# correctly, with the Android NDK's headers/libs available — not just
+# whatever plain `clang` happens to default to.
+#
+# Two options, in order of preference:
+#   a) a full Android NDK (ANDROID_NDK_HOME) with its own clang wrapper
+#   b) Termux's own `clang` + the `ndk-sysroot` package (installed by
+#      install.sh via `pkg install clang ndk-sysroot`)
+#
+# IMPORTANT, and the reason this file looks the way it does: the real
+# `ndk-sysroot` Termux package does NOT create a `$PREFIX/opt/ndk-sysroot`
+# folder — it merges the NDK's headers straight into `$PREFIX/include`
+# and its libs into `$PREFIX/lib` (see termux/termux-packages
+# packages/ndk-sysroot/build.sh). An earlier version of this file checked
+# for that folder, which never exists, so it always reported "missing"
+# even right after a successful `pkg install ndk-sysroot`. We now check
+# for a real file the package installs instead, and don't pass a
+# `--sysroot=` flag at all — once merged into $PREFIX, clang already
+# finds those headers on its normal default search path.
 
-# _android_abi -> arm64-v8a / armeabi-v7a / x86_64 / x86, based on the
-# architecture Termux itself is running on (we build for the device
-# we're building ON — see docs/NATIVE.md for why cross-ABI builds
-# aren't supported here).
 android_abi() {
     case "$(uname -m)" in
         aarch64) echo "arm64-v8a" ;;
@@ -36,6 +41,14 @@ _android_triple() {
     esac
 }
 
+# ndk_sysroot_installed -> true if the Termux `ndk-sysroot` package looks
+# installed. android/log.h is a solid marker: it ships with the NDK
+# headers (needed for __android_log_print / the -llog flag native.sh
+# already uses) and isn't part of a bare Termux install without it.
+ndk_sysroot_installed() {
+    [ -f "${PREFIX:-/data/data/com.termux/files/usr}/include/android/log.h" ]
+}
+
 # resolve_cxx_compiler <api> -> prints "COMPILER_CMD|EXTRA_FLAGS", or fails
 # with a clear reason on stderr. EXTRA_FLAGS may be empty.
 resolve_cxx_compiler() {
@@ -55,14 +68,17 @@ resolve_cxx_compiler() {
         echo "ANDROID_NDK_HOME is set but no ${triple}-clang++ found under it" >&2
     fi
 
-    # Option B: Termux's clang + the `ndk-sysroot` package
+    # Option B: Termux's clang + the `ndk-sysroot` package. No --sysroot
+    # flag needed — ndk-sysroot's headers/libs are merged into $PREFIX
+    # itself, already on clang's default search path. -target still
+    # pins the exact API level from Candy.toml's min_sdk rather than
+    # whatever Termux's clang defaults to.
     if command -v clang++ >/dev/null 2>&1; then
-        local sysroot="$PREFIX/opt/ndk-sysroot"
-        if [ -d "$sysroot" ]; then
-            echo "clang++|--target=$triple --sysroot=$sysroot"
+        if ndk_sysroot_installed; then
+            echo "clang++|-target $triple"
             return 0
         fi
-        echo "clang++ found, but $sysroot is missing (run: pkg install ndk-sysroot)" >&2
+        echo "clang++ found, but the ndk-sysroot package is missing (run: pkg install ndk-sysroot)" >&2
     else
         echo "clang++ not found (run: pkg install clang)" >&2
     fi

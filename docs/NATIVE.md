@@ -6,24 +6,25 @@ for game/engine code, not a game engine itself — CandyBuild does not
 provide a game loop, `SurfaceView`, or `GameActivity`. You write that on
 top of this.
 
-## Why you need `ndk-sysroot` (or a full NDK), not just `clang`
-
-Termux's own `clang` compiles binaries that link against **Termux's own
-libc** (`$PREFIX/lib`). A `.so` built that way loads fine inside Termux,
-but **will not load inside a normal Android app process** — the app uses
-the system's Bionic libc, a different, incompatible environment.
-`System.loadLibrary()` on such a `.so` fails with a linker error at
-runtime, after a build that reported success — the exact "looks fine,
-crashes on the device" trap this project tries to avoid elsewhere.
-
-To produce a real Android `.so`, install one of:
+## Setup
 
 ```
 pkg install clang ndk-sysroot
 ```
 
-or point `ANDROID_NDK_HOME` at a full Android NDK if you have one
-installed. `candybuild doctor` reports which one (if either) it found.
+`install.sh` does this for you automatically. `ndk-sysroot` merges the
+Android NDK's headers into `$PREFIX/include` and libs into `$PREFIX/lib`
+— it doesn't create a separate folder, it becomes part of Termux's own
+`clang++` search path. `candybuild doctor` checks for it via
+`$PREFIX/include/android/log.h`, a file that package installs.
+
+Once it's installed, `compiler/native.sh` compiles with
+`clang++ -target aarch64-linux-android<api> ...` (no extra `--sysroot`
+needed — that's already covered by the merge above), where `<api>` comes
+from your project's `min_sdk`.
+
+If you have a full Android NDK instead (`ANDROID_NDK_HOME` pointing at
+one), CandyBuild prefers that and uses its own per-ABI `clang++` wrapper.
 
 ## What gets built
 
@@ -37,14 +38,28 @@ installed. `candybuild doctor` reports which one (if either) it found.
 - Skipped entirely if the project has no `cpp/*.cpp` files — existing
   projects are unaffected.
 
+## If `System.loadLibrary()` fails at runtime with a linker error
+
+This usually means your `.so` depends on a shared C++ runtime
+(`libc++_shared.so`) that isn't reachable from your app's own process —
+Termux's own copy lives under Termux's private data directory, which a
+different app can't read. Two ways around it:
+
+- Link the C++ runtime statically instead of dynamically, so the `.so`
+  has no external runtime dependency, or
+- Copy the matching `libc++_shared.so` into your project's own `libs/<abi>/`
+  so it gets packaged into your APK and found there instead.
+
+If you hit this, tell me which one and I'll wire the right flag into
+`compiler/native.sh` — the correct flag can depend on your clang/NDK
+version, so it's worth confirming on your actual build first rather than
+guessing here.
+
 ## Known limitations
 
 - No CMake, no `Android.mk` — just every `.cpp` under `cpp/` compiled
   and linked into one `.so`. Multiple libraries or subfolders with their
   own build config aren't supported; keep it flat.
-- No STL beyond what `-llog` needs; if you use `std::` containers
-  heavily you may need `-static-libstdc++` or similar — add flags to
-  `compiler/native.sh` directly if so.
 - JNI function name mangling assumes an underscore-free package name.
   An underscore in your package/class name needs manual `_1` escaping
   per the JNI spec.

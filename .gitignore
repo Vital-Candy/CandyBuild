@@ -1,0 +1,7 @@
+# The Android SDK that install.sh downloads into this same directory —
+# hundreds of MB, thousands of files. This is runtime data, not part of
+# the tool, and must never be committed.
+sdk/
+
+# Misc local artifacts
+*.log

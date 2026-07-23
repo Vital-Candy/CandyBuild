@@ -63,8 +63,18 @@ if [ "${#KOTLIN_FILES[@]}" -gt 0 ]; then
     UI="$(toml_get "$PROJECT/Candy.toml" ui views)"
     if [ "$UI" = "compose" ]; then
         log_info "Compose project — resolving matching compiler plugin..."
-        KOTLIN_VERSION="$(kotlinc -version 2>&1 | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
-        [ -z "$KOTLIN_VERSION" ] && die "Could not detect kotlinc version (needed to fetch a matching Compose compiler plugin)"
+        # On Termux (arm64), kotlinc prints a harmless jansi/native-library
+        # warning to stderr BEFORE its real version line (e.g.
+        # "Failed to load native library:jansi-2.4.0-...-libjansi.so").
+        # That warning also contains an X.Y.Z-shaped number, so grabbing
+        # the first version-looking string from combined output used to
+        # pick up jansi's own version instead of kotlinc's — and would
+        # have silently fetched the wrong (incompatible) Compose compiler
+        # plugin from Maven. Filter for the actual version line first.
+        KOTLIN_RAW="$(kotlinc -version 2>&1)"
+        KOTLIN_VERSION_LINE="$(echo "$KOTLIN_RAW" | grep -iE 'kotlinc-jvm|kotlin version' | head -n1)"
+        KOTLIN_VERSION="$(echo "$KOTLIN_VERSION_LINE" | grep -oE '[0-9]+\.[0-9]+\.[0-9]+' | head -n1)"
+        [ -z "$KOTLIN_VERSION" ] && die "Could not detect kotlinc version from: $KOTLIN_RAW (needed to fetch a matching Compose compiler plugin)"
         case "$KOTLIN_VERSION" in
             1.*) die "Jetpack Compose here requires Kotlin 2.0+ (K2 compose compiler). Installed: kotlinc $KOTLIN_VERSION" ;;
         esac
